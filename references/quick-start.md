@@ -13,4 +13,4 @@ Recommended defaults:
 - Capture only visible and meaningful focus targets
 - Preserve canonical section order
 - Use Outline-only pills
-- If a visible focus ring is shown, use Outline: visible focus ring (never none)
+- If a visible focus ring is shown, record its measured three-field outline pill; never label it as `none`

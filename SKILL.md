@@ -17,9 +17,9 @@ Create a repeatable keyboard-focus evidence report for web flows using browser a
 
 ## Inputs To Confirm
 
-- Base URL. If the current repo has `docs/keyboard-focus-report.config.json`, use its `url` value as the default and only ask if the file is missing or the user wants to override it. Example: http://localhost:8080/index.html?ld_LovableMaster=true&ld_LovableHome=true&ld_LovableMenu=true&ld_TwoTapCheckout=true
+- Base URL. If the current repo has `docs/keyboard-focus-report.config.json`, use its `url` value as the default and only ask if the user wants to override it. If the file is missing, default to: https://bestellen.dominos.nl/?ld_LovableMaster=true&ld_LovableHome=true&ld_LovableMenu=true&ld_TwoTapCheckout=true
 - Canonical report path in current repo. If the current repo has `docs/keyboard-focus-report.config.json`, use its `reportPath` value as the default and only ask if the file is missing or the user wants to override it. Example: docs/keyboard-focus-report.html
-- Sections to run: Home, Sign in, Sign up, Delivery, Delivery > Manual search
+- Sections to run: Cookie banner (OneTrust), Home, Sign in, Sign up, Delivery, Manual Search
 - Start-state policy: strict clean start, or reuse active browser state
 - Screenshot output folder in repo (example: docs/visual-reports/<flow>-<date>/)
 
@@ -29,6 +29,57 @@ Repo-default execution rule:
 - In that case, do not ask the user for base URL or report path unless they explicitly want an override.
 - Prefer this command shape in Copilot CLI and other automation:
   - `/Users/adis.suffian/.copilot/keyboard-focus-report/run-focus-report.sh --config docs/keyboard-focus-report.config.json`
+
+## Gold Standard Rules (Mandatory — Never Override)
+
+These rules were established and locked in as mandatory policy. They apply to every section, every rerun, every future report without exception.
+
+### Sweep Order (Golden Rule)
+- **Always run a full keyboard sweep in default state first** — no input, no interaction applied yet.
+- Only after completing the full default-state sweep, proceed with interaction (e.g. type an address, open a dropdown).
+- For any interaction that reveals a list or dropdown:
+  - Sweep keyboard focus across its items first, **capturing up to a maximum of 4 unique stops** if the list is long.
+  - Include `Manual Search` or equivalent secondary actions if they appear as keyboard-focusable stops within that context.
+  - After the sweep, continue Tab until focus **loops back to the originating element** before activating it (click/Enter).
+- For form fields (e.g. House Number): sweep the entire form in default state first. Only when focus returns to the same field a **second time** (loopback), enter input and continue the remaining test.
+
+### Human-Visible Compliance (Golden Rule)
+- **If a keyboard focus ring is not obviously visible to a human, classify it as non-compliant (blue).**
+- Computed CSS values (outline, outline-width, outline-color) are evidence but are **not sufficient alone**.
+- If computed style reports a valid ring but the screenshot shows only a thin line, divider, or clipped/masked ring, this is a **script false positive** and must be marked non-compliant.
+- Record the actual computed values in the pill text (do not zero them out).
+- Add `"compliant": false` on the card in the config to force the blue bubble regardless of pill content.
+- Add a `"remark"` field on the card explaining the false positive reasoning.
+
+### Remarks Field (Golden Rule)
+- When a card has `"compliant": false` **or** when computed CSS and the screenshot visually disagree (false positive or false negative), a `"remark"` field is **required**.
+- **False positive**: computed CSS reports a valid ring but no human-visible ring appears in the screenshot.
+- **False negative**: computed CSS reports no ring but a human-visible ring is clearly present in the screenshot.
+- Remark must explain: what was visually observed, why it diverges from computed CSS, and why it matters for a person with visual impairment.
+- Remarks are rendered below the pill in the report.
+- Validation will **fail** if a card has `"compliant": false` and no remark, or if the remark is empty.
+
+### No Redundancy (Golden Rule)
+- **Remove all duplicate stops** before saving the capture manifest.
+- Deduplication is by: same `desc` field AND identical screenshot content (SHA-1 hash).
+- After deduplication, renumber all stops sequentially so counts are accurate.
+- A stop that represents a second-visit to the same element for a different purpose (e.g. second address-field focus before typing) is **not a duplicate** — it is a new intentional stop.
+
+### Summary Table Headers (Golden Rule)
+- The summary table must always use exactly: `Section`, `Stops`, `Compliance`, `Non-compliance`.
+- Never use `Comply` or `Non-comply`.
+
+### Aria Truncation (Golden Rule)
+- Aria text in `desc` must be truncated to the **first 4 words followed by `...`** when the full text is longer than 4 words.
+- This applies to every card in every section without exception.
+
+### Pill Data Accuracy (Golden Rule)
+- Pill text must always reflect **real measured computed style values**, never zeroed-out placeholders.
+- If the ring is not human-visible, use `"compliant": false` to force the blue bubble — do not fake the pill data.
+
+### Compliance Bubble Colour (Golden Rule)
+- **Green bubble** = `pill-solid` = human-visible ring that matches contract (black or white, 2px solid, 2px offset).
+- **Blue bubble** = `pill` = non-compliant: ring not human-visible, or wrong colour, or `"compliant": false` override.
 
 ## Standard Rules (Always Apply)
 
@@ -54,11 +105,12 @@ Reference focus-color contract for this repo:
 - Use outline-only pills in report labels.
 - Never use Flow labels in pills.
 - Use one description schema for every card in every section:
-  - Tag: <ELEMENT_TAG>, Role: <role-or-none>, Aria: <aria-label-or-best-accessible-name>
+  - Aria: <aria-label-or-best-accessible-name>, Tag: <ELEMENT_TAG>, Role: <role-or-none>
 - Never mix description styles within one report (for example avoid narrative text in one section and Tag/Role/Aria in another).
 - Do not use Label: in descriptions; use Aria: consistently.
 - Do not infer exact CSS outline values unless measured directly from computed style.
 - If a visible ring/indicator is present, never label it as none.
+- If `outline: none` is computed but a visible browser-default focus indicator is still rendered (for example on an `<input>`), include the card and use pill: `Outline none: <width>; Outline color: browser default; Outline offset: unknown`.
 
 Pill standard text:
 
@@ -66,20 +118,21 @@ Pill standard text:
 
 Preferred examples:
 
-- Outline solid: 2px; Outline color: black; Outline offset: 2px
-- Outline solid: 2px; Outline color: white; Outline offset: 2px
-- Outline solid: 2px; Outline color: blue; Outline offset: unknown
-- Outline none: 3px; Outline color: blue; Outline offset: unknown
+- Outline solid: 2px; Outline color: rgb(0, 0, 0) black; Outline offset: 2px
+- Outline solid: 2px; Outline color: rgb(255, 255, 255) white; Outline offset: 2px
+- Outline solid: 2px; Outline color: rgb(0, 95, 204) blue; Outline offset: unknown
+- Outline none: 3px; Outline color: browser default; Outline offset: unknown
 
 ## Required Report Sections
 
 Use this section order unless user asks otherwise:
 
-1. Home
-2. Sign in
-3. Sign up
-4. Delivery
-5. Delivery > Manual search
+1. Cookie banner (OneTrust)
+2. Home
+3. Sign in
+4. Sign up
+5. Delivery
+6. Manual Search
 
 ## Execution Procedure
 
@@ -112,7 +165,7 @@ For each requested section:
 Use this scenario when Delivery labels are disputed or stale:
 
 - Start from Home route and open Delivery from the start-order dialog.
-- Enter test keyword (example: 1a london dr) in the Delivery search field.
+- Enter test keyword **Bijlmerplein** in the Delivery search field (use this same address for both Delivery and Manual Search sections).
 - Capture first-page tab sequence only (before navigating deeper):
   - search field
   - top utility controls (for example English, Account)
@@ -168,7 +221,7 @@ Label accuracy rule:
 
 - Confirm no pill contains Flow: text.
 - Confirm every pill uses the 3-field structure: outline, outline color, and outline offset.
-- Confirm every card description starts with Tag:, includes Role:, and includes Aria:.
+- Confirm every card description starts with Aria:, includes Tag:, and includes Role:.
 - Confirm focus contract baseline exists in `applications/olo.web/style.less`: `outline: 2px solid #000000` and `outline-offset: 2px`.
 - Confirm dark-surface contract exists in `applications/olo.web/style.less`: footer and `[data-focus-surface='dark']` `:focus-visible` rules with `outline-color: #ffffff`.
 - Confirm ring gap between element and focus indicator is 2px (`outline-offset: 2px`) when using the global outline contract.
